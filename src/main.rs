@@ -420,10 +420,77 @@ fn main() -> Result<(), eframe::Error> {
     thread::spawn(move || { loop { if let Ok(event) = MenuEvent::receiver().try_recv() { if event.id == settings_id { let _ = tx.send(TrayMessage::ShowSettings); } else if event.id == quit_id { let _ = tx.send(TrayMessage::Quit); break; } } thread::sleep(Duration::from_millis(100)); } });
     let native_options = eframe::NativeOptions { initial_window_size: Some(Vec2::new(400.0, 300.0)), decorated: false, transparent: true, ..Default::default() };
     eframe::run_native("Photo Widget", native_options, Box::new(move |cc| {
+        // let mut fonts = FontDefinitions::default();
+        // fonts.font_data.insert("my_font".to_owned(), FontData::from_static(include_bytes!("../fonts/msyh.ttc")));
+        // fonts.families.entry(FontFamily::Proportional).or_default().insert(0, "my_font".to_owned());
+        // fonts.families.entry(FontFamily::Monospace).or_default().insert(0, "my_font".to_owned());
+        // cc.egui_ctx.set_fonts(fonts);
         let mut fonts = FontDefinitions::default();
-        fonts.font_data.insert("my_font".to_owned(), FontData::from_static(include_bytes!("../fonts/msyh.ttc")));
-        fonts.families.entry(FontFamily::Proportional).or_default().insert(0, "my_font".to_owned());
-        fonts.families.entry(FontFamily::Monospace).or_default().insert(0, "my_font".to_owned());
+
+        // 1. 将所有 .ttf 字体数据加载到 font_data 映射中
+        fonts.font_data.insert(
+            "noto_sans".to_owned(),
+            FontData::from_static(include_bytes!("../fonts/NotoSans-Regular.ttf")).tweak(
+                egui::FontTweak {
+                    size: Some(16.0), // 可以微调字体大小，使其视觉上更一致
+                    ..Default::default()
+                }
+            ),
+        );
+        fonts.font_data.insert(
+            "noto_sans_sc".to_owned(),
+            // 确认文件名是 NotoSansSC-Regular.ttf
+            FontData::from_static(include_bytes!("../fonts/NotoSansSC-Regular.ttf")).tweak(
+                 egui::FontTweak {
+                    size: Some(16.0),
+                    ..Default::default()
+                }
+            ),
+        );
+        fonts.font_data.insert(
+            "noto_sans_jp".to_owned(),
+            // 确认文件名是 NotoSansJP-Regular.ttf
+            FontData::from_static(include_bytes!("../fonts/NotoSansJP-Regular.ttf")).tweak(
+                 egui::FontTweak {
+                    size: Some(16.0),
+                    ..Default::default()
+                }
+            ),
+        );
+        fonts.font_data.insert(
+            "noto_sans_kr".to_owned(),
+            // 确认文件名是 NotoSansKR-Regular.ttf
+            FontData::from_static(include_bytes!("../fonts/NotoSansKR-Regular.ttf")).tweak(
+                 egui::FontTweak {
+                    size: Some(16.0),
+                    ..Default::default()
+                }
+            ),
+        );
+
+        // 2. 定义字体回退顺序
+        // 将 Noto Sans (拉丁文) 作为首选，然后依次是简体中文、日文、韩文
+        fonts.families
+            .entry(FontFamily::Proportional)
+            .or_default()
+            .extend(vec![
+                "noto_sans".to_owned(),
+                "noto_sans_sc".to_owned(),
+                "noto_sans_jp".to_owned(),
+                "noto_sans_kr".to_owned(),
+            ]);
+        
+        // 为等宽字体也设置回退 (如果需要的话)
+        fonts.families
+            .entry(FontFamily::Monospace)
+            .or_default()
+            .extend(vec![
+                "noto_sans".to_owned(), // 理想情况下这里应该用 Noto Sans Mono
+                "noto_sans_sc".to_owned(),
+                "noto_sans_jp".to_owned(),
+                "noto_sans_kr".to_owned(),
+            ]);
+
         cc.egui_ctx.set_fonts(fonts);
         let mut visuals = Visuals::dark();
         visuals.window_fill = Color32::TRANSPARENT;
