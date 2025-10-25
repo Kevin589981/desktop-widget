@@ -16,9 +16,13 @@ walkdir = "2.3.3"
 # 添加下面这一行来解决编译错误
 winapi = { version = "0.3.9", features = ["winuser", "windef"] }
 
+[build-dependencies]
+embed-resource = "2.1"
+
 [profile.release]
 opt-level = "z"     # 优化等级，"z" 表示尽可能优化体积
 lto = true          # 启用链接时优化 (Link-Time Optimization)，可以跨 crate 删除未使用的代码
 codegen-units = 1   # 将所有代码编译成一个单元，增加优化机会
 panic = "abort"     # 遇到 panic 时直接终止程序，而不是生成复杂的堆栈展开代码
 strip = true        # 自动剥离符号信息，类似于手动运行 `strip` 命令
+

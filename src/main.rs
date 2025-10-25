@@ -407,18 +407,66 @@ impl eframe::App for PhotoWidget {
 
 fn save_config(config: &AppConfig) { if let Ok(json) = serde_json::to_string_pretty(config) { let _ = fs::write(CONFIG_FILE, json); } }
 fn load_config() -> Result<AppConfig, Box<dyn std::error::Error>> { let json_str = fs::read_to_string(CONFIG_FILE)?; let config = serde_json::from_str(&json_str)?; Ok(config) }
+
+fn load_icon() -> eframe::IconData {
+    let (icon_rgba, icon_width, icon_height) = {
+        let image = image::load_from_memory(include_bytes!("../icon.ico"))
+            .expect("Failed to open icon path")
+            .into_rgba8();
+        let (width, height) = image.dimensions();
+        let rgba = image.into_raw();
+        (rgba, width, height)
+    };
+
+    eframe::IconData {
+        rgba: icon_rgba,
+        width: icon_width,
+        height: icon_height,
+    }
+}
+
 fn main() -> Result<(), eframe::Error> {
     let (tx, rx) = mpsc::channel();
     let settings_item = MenuItem::new("Settings", true, None);
-    // *** FIX: Changed . to :: ***
-    let quit_item = MenuItem::new("Quit", true, None); 
+    let quit_item = MenuItem::new("Quit", true, None); // FIX from original code
     let settings_id = settings_item.id().clone();
     let quit_id = quit_item.id().clone();
     let menu = Menu::new();
     menu.append_items(&[&settings_item, &quit_item]).unwrap();
-    let _tray_icon = TrayIconBuilder::new().with_tooltip("Photo Widget").with_icon(tray_icon::Icon::from_rgba([255, 100, 200, 255].repeat(32 * 32), 32, 32).unwrap()).with_menu(Box::new(menu)).build().unwrap();
+
+    // --- 统一加载图标 ---
+    // 1. 调用一次辅助函数，获取解码后的图标数据
+    let icon = load_icon();
+
+    // --- 托盘图标设置 ---
+    // 2. 使用解码后的 RGBA 数据创建托盘图标
+    let tray_icon = tray_icon::Icon::from_rgba(
+        icon.rgba.clone(), // 需要克隆，因为 icon 变量稍后会被移动
+        icon.width,
+        icon.height,
+    ).expect("Failed to create tray icon");
+
+    let _tray_icon = TrayIconBuilder::new()
+        .with_tooltip("Photo Widget")
+        .with_icon(tray_icon) // 使用创建好的图标
+        .with_menu(Box::new(menu))
+        .build()
+        .unwrap();
+
+    // ... (the tray event thread remains the same) ...
     thread::spawn(move || { loop { if let Ok(event) = MenuEvent::receiver().try_recv() { if event.id == settings_id { let _ = tx.send(TrayMessage::ShowSettings); } else if event.id == quit_id { let _ = tx.send(TrayMessage::Quit); break; } } thread::sleep(Duration::from_millis(100)); } });
-    let native_options = eframe::NativeOptions { initial_window_size: Some(Vec2::new(400.0, 300.0)), decorated: false, transparent: true, ..Default::default() };
+
+    // --- 窗口图标设置 ---
+    let native_options = eframe::NativeOptions {
+        initial_window_size: Some(Vec2::new(400.0, 300.0)),
+        decorated: false,
+        transparent: true,
+        icon_data: Some(icon), // 3. 在这里设置窗口图标 (icon 变量的所有权被移交)
+        ..Default::default()
+    };
+    
+
+    
     eframe::run_native("Photo Widget", native_options, Box::new(move |cc| {
         // let mut fonts = FontDefinitions::default();
         // fonts.font_data.insert("my_font".to_owned(), FontData::from_static(include_bytes!("../fonts/msyh.ttc")));
