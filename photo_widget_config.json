@@ -1,0 +1,16 @@
+{
+  "folders": [
+    "D:\\1\\desktop\\pic\\Reiji"
+  ],
+  "always_on_top": false,
+  "refresh_interval": 1,
+  "refresh_value": 1,
+  "refresh_unit": "Seconds",
+  "landscape_width": 400.0,
+  "landscape_height": 400.0,
+  "portrait_width": 400.0,
+  "portrait_height": 400.0,
+  "fit_mode": "Contain",
+  "resize_anchor": "Center",
+  "orientation_filter": "Portrait"
+}
