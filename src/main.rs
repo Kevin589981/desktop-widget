@@ -88,6 +88,7 @@ enum FitMode {
 struct PhotoWidget {
     config: AppConfig,
     image_files: Vec<PathBuf>,
+    current_image_index: usize,
     current_image: Option<TextureHandle>,
     last_update: Instant,
     show_settings: bool,
@@ -119,6 +120,7 @@ impl PhotoWidget {
         let mut app = Self {
             config,
             image_files: Vec::new(),
+            current_image_index: 0,
             current_image: None,
             last_update: Instant::now(),
             show_settings: false,
@@ -158,13 +160,37 @@ impl PhotoWidget {
             }
         }
         self.image_files.shuffle(&mut thread_rng());
+        self.current_image_index = 0;
     }
 
     fn load_random_image(&mut self) {
-        if let Some(path) = self.image_files.choose(&mut thread_rng()).cloned() {
+        if self.image_files.is_empty() {
+            return;
+        }
+
+        // 如果索引超出了范围，意味着列表已经播放完毕
+        if self.current_image_index >= self.image_files.len() {
+            self.image_files.shuffle(&mut thread_rng()); // 重新打乱列表
+            self.current_image_index = 0;                // 重置索引到开头
+        }
+
+        // 获取当前索引对应的图片路径
+        if let Some(path) = self.image_files.get(self.current_image_index).cloned() {
             self.current_image_path = Some(path.clone());
             let image_tx = self.image_tx.clone();
-            thread::spawn(move || { if let Ok(reader) = ImageReader::open(&path) { if let Ok(image) = reader.with_guessed_format() { if let Ok(decoded_image) = image.decode() { let _ = image_tx.send(Some(decoded_image)); } } } });
+            
+            thread::spawn(move || {
+                if let Ok(reader) = ImageReader::open(&path) {
+                    if let Ok(image) = reader.with_guessed_format() {
+                        if let Ok(decoded_image) = image.decode() {
+                            let _ = image_tx.send(Some(decoded_image));
+                        }
+                    }
+                }
+            });
+            
+            // 将索引向后移动一位，为下一次加载做准备
+            self.current_image_index += 1;
         }
     }
 }
