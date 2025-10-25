@@ -432,7 +432,7 @@ fn main() -> Result<(), eframe::Error> {
             "noto_sans".to_owned(),
             FontData::from_static(include_bytes!("../fonts/NotoSans-Regular.ttf")).tweak(
                 egui::FontTweak {
-                    size: Some(16.0), // 可以微调字体大小，使其视觉上更一致
+                    scale: 1.0, // 可以微调字体大小，使其视觉上更一致
                     ..Default::default()
                 }
             ),
@@ -442,7 +442,7 @@ fn main() -> Result<(), eframe::Error> {
             // 确认文件名是 NotoSansSC-Regular.ttf
             FontData::from_static(include_bytes!("../fonts/NotoSansSC-Regular.ttf")).tweak(
                  egui::FontTweak {
-                    size: Some(16.0),
+                    scale: 1.0,
                     ..Default::default()
                 }
             ),
@@ -452,7 +452,7 @@ fn main() -> Result<(), eframe::Error> {
             // 确认文件名是 NotoSansJP-Regular.ttf
             FontData::from_static(include_bytes!("../fonts/NotoSansJP-Regular.ttf")).tweak(
                  egui::FontTweak {
-                    size: Some(16.0),
+                    scale: 1.0,
                     ..Default::default()
                 }
             ),
@@ -462,7 +462,7 @@ fn main() -> Result<(), eframe::Error> {
             // 确认文件名是 NotoSansKR-Regular.ttf
             FontData::from_static(include_bytes!("../fonts/NotoSansKR-Regular.ttf")).tweak(
                  egui::FontTweak {
-                    size: Some(16.0),
+                    scale: 1.0,
                     ..Default::default()
                 }
             ),
