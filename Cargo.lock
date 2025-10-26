@@ -834,6 +834,7 @@ dependencies = [
  "tray-icon",
  "walkdir",
  "winapi",
+ "winit",
 ]
 
 [[package]]

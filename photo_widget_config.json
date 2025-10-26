@@ -11,6 +11,6 @@
   "portrait_width": 400.0,
   "portrait_height": 400.0,
   "fit_mode": "Contain",
-  "resize_anchor": "Center",
-  "orientation_filter": "Portrait"
+  "resize_anchor": "TopRight",
+  "orientation_filter": "Landscape"
 }

@@ -28,6 +28,10 @@ const CONFIG_FILE: &str = "photo_widget_config.json";
 enum ResizeAnchor {
     Center,
     TopLeft,
+    // --- 新增选项 ---
+    TopRight,
+    BottomLeft,
+    BottomRight,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Debug)]
@@ -265,7 +269,6 @@ impl eframe::App for PhotoWidget {
                             let width = self.config.landscape_width;
                             Vec2::new(width, width / aspect_ratio)
                         } else {
-                            // 对于竖向图片，以高度为基准计算宽度
                             let height = self.config.portrait_height;
                             Vec2::new(height * aspect_ratio, height)
                         }
@@ -273,9 +276,20 @@ impl eframe::App for PhotoWidget {
                 }
             } else { Vec2::new(self.config.landscape_width, self.config.landscape_height) }
         };
+
         if let Some(old_size) = self.last_window_size {
             if old_size != new_size {
-                if self.config.resize_anchor == ResizeAnchor::Center { if let Some(current_pos) = frame.info().window_info.position { let delta = new_size - old_size; frame.set_window_pos(current_pos - delta / 2.0); } }
+                if let Some(current_pos) = frame.info().window_info.position {
+                    let delta = new_size - old_size;
+                    let new_window_pos = match self.config.resize_anchor {
+                        ResizeAnchor::Center => current_pos - delta / 2.0,
+                        ResizeAnchor::TopLeft => current_pos, // 左上角不变
+                        ResizeAnchor::TopRight => current_pos - egui::vec2(delta.x, 0.0), // 保持顶部不变，右侧移动
+                        ResizeAnchor::BottomLeft => current_pos - egui::vec2(0.0, delta.y), // 保持左侧不变，底部移动
+                        ResizeAnchor::BottomRight => current_pos - delta, // 保持右下角不变
+                    };
+                    frame.set_window_pos(new_window_pos);
+                }
             }
         }
         frame.set_window_size(new_size);
@@ -325,7 +339,18 @@ impl eframe::App for PhotoWidget {
                 ui.horizontal(|ui| { ui.radio_value(&mut self.config.fit_mode, FitMode::Cover, "Cover (Fill and Crop)"); ui.radio_value(&mut self.config.fit_mode, FitMode::Contain, "Contain (Fit and Resize Window)"); });
                 ui.separator();
                 ui.label("Resize Anchor Point:");
-                ui.horizontal(|ui| { ui.radio_value(&mut self.config.resize_anchor, ResizeAnchor::Center, "Keep Center"); ui.radio_value(&mut self.config.resize_anchor, ResizeAnchor::TopLeft, "Keep Top-Left"); });
+                ui.horizontal(|ui| {
+                    ui.radio_value(&mut self.config.resize_anchor, ResizeAnchor::Center, "Keep Center");
+                    ui.radio_value(&mut self.config.resize_anchor, ResizeAnchor::TopLeft, "Keep Top-Left");
+                });
+                ui.horizontal(|ui| {
+                    ui.radio_value(&mut self.config.resize_anchor, ResizeAnchor::TopRight, "Keep Top-Right");
+                    ui.radio_value(&mut self.config.resize_anchor, ResizeAnchor::BottomLeft, "Keep Bottom-Left");
+                });
+                ui.horizontal(|ui| {
+                    ui.radio_value(&mut self.config.resize_anchor, ResizeAnchor::BottomRight, "Keep Bottom-Right");
+                });
+
                 ui.separator();
                 if ui.button("Save and Close").clicked() {
                     let multiplier = match self.config.refresh_unit { TimeUnit::Seconds => 1, TimeUnit::Minutes => 60, TimeUnit::Hours => 3600, };
@@ -428,44 +453,59 @@ fn load_icon() -> eframe::IconData {
 fn main() -> Result<(), eframe::Error> {
     let (tx, rx) = mpsc::channel();
     let settings_item = MenuItem::new("Settings", true, None);
-    let quit_item = MenuItem::new("Quit", true, None); // FIX from original code
+    let quit_item = MenuItem::new("Quit", true, None);
     let settings_id = settings_item.id().clone();
     let quit_id = quit_item.id().clone();
     let menu = Menu::new();
     menu.append_items(&[&settings_item, &quit_item]).unwrap();
 
-    // --- 统一加载图标 ---
-    // 1. 调用一次辅助函数，获取解码后的图标数据
     let icon = load_icon();
 
-    // --- 托盘图标设置 ---
-    // 2. 使用解码后的 RGBA 数据创建托盘图标
-    let tray_icon = tray_icon::Icon::from_rgba(
-        icon.rgba.clone(), // 需要克隆，因为 icon 变量稍后会被移动
+    let tray_icon_data = tray_icon::Icon::from_rgba(
+        icon.rgba.clone(),
         icon.width,
         icon.height,
     ).expect("Failed to create tray icon");
 
     let _tray_icon = TrayIconBuilder::new()
         .with_tooltip("Photo Widget")
-        .with_icon(tray_icon) // 使用创建好的图标
+        .with_icon(tray_icon_data)
         .with_menu(Box::new(menu))
         .build()
         .unwrap();
 
-    // ... (the tray event thread remains the same) ...
-    thread::spawn(move || { loop { if let Ok(event) = MenuEvent::receiver().try_recv() { if event.id == settings_id { let _ = tx.send(TrayMessage::ShowSettings); } else if event.id == quit_id { let _ = tx.send(TrayMessage::Quit); break; } } thread::sleep(Duration::from_millis(100)); } });
+    thread::spawn(move || {
+        loop {
+            if let Ok(event) = MenuEvent::receiver().try_recv() {
+                if event.id == settings_id {
+                    let _ = tx.send(TrayMessage::ShowSettings);
+                } else if event.id == quit_id {
+                    let _ = tx.send(TrayMessage::Quit);
+                    break;
+                }
+            }
+            thread::sleep(Duration::from_millis(100));
+        }
+    });
 
-    // --- 窗口图标设置 ---
+    // --- 修改开始 ---
+    // 关键改动：配置 eframe::NativeOptions 以隐藏任务栏图标
     let native_options = eframe::NativeOptions {
         initial_window_size: Some(Vec2::new(400.0, 300.0)),
         decorated: false,
         transparent: true,
-        icon_data: Some(icon), // 3. 在这里设置窗口图标 (icon 变量的所有权被移交)
+        icon_data: Some(icon),
+
+        // 1. 使用 `window_builder` 字段来自定义底层的 winit::WindowBuilder
+        window_builder: Some(Box::new(|wb| {
+            // 2. 导入 Windows 平台的扩展 trait
+            use winit::platform::windows::WindowBuilderExtWindows;
+            // 3. 调用 with_skip_taskbar(true) 方法，告诉 Windows 不要为此窗口在任务栏上创建按钮
+            wb.with_skip_taskbar(true)
+        })),
+
         ..Default::default()
     };
-    
-
     
     eframe::run_native("Photo Widget", native_options, Box::new(move |cc| {
         // let mut fonts = FontDefinitions::default();

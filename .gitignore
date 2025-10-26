@@ -1,1 +1,4 @@
 /target
+Cargo.lock
+icon1.icon
+*.json
