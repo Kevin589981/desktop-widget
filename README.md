@@ -1,7 +1,7 @@
 # Photo Widget
 
 ![Photo Widget Screenshot](icon.png)
-`
+
 *Read this in [简体中文](README-zh.md)* 
 
 This is a lightweight desktop widget designed to display random images on your desktop. It aims to provide an aesthetic and unobtrusive way to showcase your photos, supporting custom image folders, refresh intervals, and window sizing.
