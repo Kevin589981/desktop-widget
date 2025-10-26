@@ -19,6 +19,8 @@ use serde::{Deserialize, Serialize};
 use tray_icon::{
     menu::{Menu, MenuEvent, MenuItem},
     TrayIconBuilder,
+    TrayIconEvent, // <-- 新增: 引入图标事件
+    ClickType,     // <-- 新增: 引入点击类型
 };
 use walkdir::WalkDir;
 
@@ -226,6 +228,9 @@ impl eframe::App for PhotoWidget {
         if let Ok(msg) = self.tray_rx.try_recv() {
             match msg {
                 TrayMessage::ShowSettings => { self.show_settings = true; frame.set_decorations(true);frame.focus();  }
+                TrayMessage::FocusWindow => {
+                    frame.focus();
+                }   
                 TrayMessage::Quit => { frame.close(); }
             }
         }
@@ -446,15 +451,34 @@ fn main() -> Result<(), eframe::Error> {
 
     let _tray_icon = TrayIconBuilder::new().with_tooltip("Photo Widget").with_icon(tray_icon_data).with_menu(Box::new(menu)).build().unwrap();
 
+    // --- 修改事件监听线程 ---
     thread::spawn(move || {
         loop {
+            // 检查菜单事件
             if let Ok(event) = MenuEvent::receiver().try_recv() {
-                if event.id == settings_id { let _ = tx.send(TrayMessage::ShowSettings); } 
-                else if event.id == quit_id { let _ = tx.send(TrayMessage::Quit); break; }
+                if event.id == settings_id { 
+                    let _ = tx.send(TrayMessage::ShowSettings); 
+                } 
+                else if event.id == quit_id { 
+                    let _ = tx.send(TrayMessage::Quit); 
+                    break; 
+                }
             }
+
+            // --- 新增: 检查图标点击事件 ---
+            if let Ok(event) = TrayIconEvent::receiver().try_recv() {
+                // 如果是左键单击
+                if event.click_type == ClickType::Left {
+                    // 发送消息以显示设置 (您可以按需更改此处的逻辑)
+                    // 例如，您可以定义一个新的 TrayMessage 来处理此事件
+                    let _ = tx.send(TrayMessage::FocusWindow);
+                }
+            }
+
             thread::sleep(Duration::from_millis(100));
         }
     });
+    // --- 线程修改结束 ---
 
     // --- 修改：在启动时加载配置，以获取初始位置 ---
     let config = load_config().unwrap_or_default();
@@ -475,6 +499,7 @@ fn main() -> Result<(), eframe::Error> {
     };
     
     eframe::run_native("Photo Widget", native_options, Box::new(move |cc| {
+        // ... (省略字体和样式的设置) ...
         let mut fonts = FontDefinitions::default();
         fonts.font_data.insert("noto_sans".to_owned(), FontData::from_static(include_bytes!("../fonts/NotoSans-Regular.ttf")).tweak(egui::FontTweak { scale: 1.0, ..Default::default() }));
         fonts.font_data.insert("noto_sans_sc".to_owned(), FontData::from_static(include_bytes!("../fonts/NotoSansSC-Regular.ttf")).tweak(egui::FontTweak { scale: 1.0, ..Default::default() }));
@@ -496,4 +521,4 @@ fn main() -> Result<(), eframe::Error> {
 }
 
 #[derive(Clone, Copy, Debug)]
-enum TrayMessage { ShowSettings, Quit, }
+enum TrayMessage { ShowSettings, Quit, FocusWindow, }
