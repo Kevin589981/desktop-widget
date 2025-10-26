@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
+
 use std::{
     fs,
     path::PathBuf,
@@ -501,15 +502,65 @@ fn main() -> Result<(), eframe::Error> {
     eframe::run_native("Photo Widget", native_options, Box::new(move |cc| {
         // ... (省略字体和样式的设置) ...
         let mut fonts = FontDefinitions::default();
-        fonts.font_data.insert("noto_sans".to_owned(), FontData::from_static(include_bytes!("../fonts/NotoSans-Regular.ttf")).tweak(egui::FontTweak { scale: 1.0, ..Default::default() }));
-        fonts.font_data.insert("noto_sans_sc".to_owned(), FontData::from_static(include_bytes!("../fonts/NotoSansSC-Regular.ttf")).tweak(egui::FontTweak { scale: 1.0, ..Default::default() }));
-        fonts.font_data.insert("noto_sans_jp".to_owned(), FontData::from_static(include_bytes!("../fonts/NotoSansJP-Regular.ttf")).tweak(egui::FontTweak { scale: 1.0, ..Default::default() }));
-        fonts.font_data.insert("noto_sans_kr".to_owned(), FontData::from_static(include_bytes!("../fonts/NotoSansKR-Regular.ttf")).tweak(egui::FontTweak { scale: 1.0, ..Default::default() }));
-        
-        fonts.families.entry(FontFamily::Proportional).or_default().extend(vec!["noto_sans".to_owned(), "noto_sans_sc".to_owned(), "noto_sans_jp".to_owned(), "noto_sans_kr".to_owned()]);
-        fonts.families.entry(FontFamily::Monospace).or_default().extend(vec!["noto_sans".to_owned(), "noto_sans_sc".to_owned(), "noto_sans_jp".to_owned(), "noto_sans_kr".to_owned()]);
 
-        cc.egui_ctx.set_fonts(fonts);
+        // 初始化系统字体数据库
+        let mut font_database = fontdb::Database::new();
+        font_database.load_system_fonts();
+
+        // 定义一个优先字体列表，覆盖中日韩及常用西文字体
+        // Windows: "Microsoft YaHei UI", "Yu Gothic UI", "Malgun Gothic"
+        // macOS: "PingFang SC", "Hiragino Kaku Gothic ProN", "Apple SD Gothic Neo"
+        // Linux: "Noto Sans CJK SC/JP/KR"
+        let font_families = [
+            "Microsoft YaHei UI",    // 简体中文 (Win)
+            "PingFang SC",           // 简体中文 (macOS)
+            "Noto Sans CJK SC",      // 简体中文 (Linux)
+            "Yu Gothic UI",          // 日语 (Win)
+            "Hiragino Kaku Gothic ProN", // 日语 (macOS)
+            "Noto Sans CJK JP",      // 日语 (Linux)
+            "Malgun Gothic",         // 韩语 (Win)
+            "Apple SD Gothic Neo",   // 韩语 (macOS)
+            "Noto Sans CJK KR",      // 韩语 (Linux)
+            "Segoe UI",             // 英文 UI 字体 (Win)
+            "San Francisco",         // 英文 UI 字体 (macOS)
+            "Arial",                 // 通用后备
+        ];
+
+        let mut loaded_font_names = Vec::new();
+
+        for family_name in &font_families {
+            let query = fontdb::Query {
+                families: &[fontdb::Family::Name(family_name)],
+                ..Default::default()
+            };
+
+            if let Some(font_id) = font_database.query(&query) {
+                if let Some((source, _index)) = font_database.face_source(font_id) {
+                    if let fontdb::Source::File(path) = source {
+                        if let Ok(font_data) = fs::read(path) {
+                            // 使用字体族名称的小写作为 egui 中的 key
+                            let font_name = family_name.to_lowercase();
+                            
+                            // 避免重复加载
+                            if !fonts.font_data.contains_key(&font_name) {
+                                fonts.font_data.insert(
+                                    font_name.clone(),
+                                    FontData::from_owned(font_data),
+                                );
+                                loaded_font_names.push(font_name);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+// 如果成功加载了任何字体，将它们设置为默认字体
+        if !loaded_font_names.is_empty() {
+            fonts.families.insert(FontFamily::Proportional, loaded_font_names.clone());
+            fonts.families.insert(FontFamily::Monospace, loaded_font_names);
+        }
+
         let mut visuals = Visuals::dark();
         visuals.window_fill = Color32::TRANSPARENT;
         visuals.window_stroke.color = Color32::TRANSPARENT;
