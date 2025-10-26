@@ -28,7 +28,6 @@ const CONFIG_FILE: &str = "photo_widget_config.json";
 enum ResizeAnchor {
     Center,
     TopLeft,
-    // --- 新增选项 ---
     TopRight,
     BottomLeft,
     BottomRight,
@@ -62,6 +61,10 @@ struct AppConfig {
     fit_mode: FitMode,
     resize_anchor: ResizeAnchor,
     orientation_filter: ImageOrientationFilter,
+    // --- 新增字段：用于存储窗口位置 ---
+    // serde(default) 确保在旧的配置文件中没有此字段时程序不会崩溃
+    #[serde(default)]
+    window_pos: Option<(f32, f32)>,
 }
 
 impl Default for AppConfig {
@@ -79,6 +82,8 @@ impl Default for AppConfig {
             fit_mode: FitMode::Cover,
             resize_anchor: ResizeAnchor::Center,
             orientation_filter: ImageOrientationFilter::Both,
+            // --- 初始化新增的字段 ---
+            window_pos: None,
         }
     }
 }
@@ -105,13 +110,15 @@ struct PhotoWidget {
     last_window_size: Option<Vec2>,
     show_drag_bar: bool,
     hover_leave_time: Option<Instant>,
-    // *** NEW: Timer for screen boundary check ***
     last_screen_check: Instant,
 }
 
 impl PhotoWidget {
-    fn new(_cc: &eframe::CreationContext<'_>, tray_rx: Receiver<TrayMessage>) -> Self {
-        let mut config: AppConfig = load_config().unwrap_or_default();
+    // --- 修改：让 new 函数接收一个已加载的 config ---
+    fn new(_cc: &eframe::CreationContext<'_>, tray_rx: Receiver<TrayMessage>, config: AppConfig) -> Self {
+        // --- 移除：不再在此处加载配置 ---
+        // let mut config: AppConfig = load_config().unwrap_or_default();
+        let mut config = config;
         let interval = config.refresh_interval;
         if interval > 0 {
             if interval % 3600 == 0 { config.refresh_unit = TimeUnit::Hours; config.refresh_value = interval / 3600; }
@@ -137,7 +144,6 @@ impl PhotoWidget {
             last_window_size: None,
             show_drag_bar: false,
             hover_leave_time: None,
-            // *** NEW: Initialize the screen check timer ***
             last_screen_check: Instant::now(),
         };
 
@@ -153,7 +159,7 @@ impl PhotoWidget {
                 let path = entry.path();
                 if let Ok((width, height)) = image::image_dimensions(path) {
                     let is_landscape = width >= height;
-                    let is_portrait = height > width; // Use > for portrait to avoid square images in both
+                    let is_portrait = height > width;
                     let should_add = match self.config.orientation_filter {
                         ImageOrientationFilter::Both => true,
                         ImageOrientationFilter::Landscape => is_landscape,
@@ -172,13 +178,11 @@ impl PhotoWidget {
             return;
         }
 
-        // 如果索引超出了范围，意味着列表已经播放完毕
         if self.current_image_index >= self.image_files.len() {
-            self.image_files.shuffle(&mut thread_rng()); // 重新打乱列表
-            self.current_image_index = 0;                // 重置索引到开头
+            self.image_files.shuffle(&mut thread_rng());
+            self.current_image_index = 0;
         }
 
-        // 获取当前索引对应的图片路径
         if let Some(path) = self.image_files.get(self.current_image_index).cloned() {
             self.current_image_path = Some(path.clone());
             let image_tx = self.image_tx.clone();
@@ -193,7 +197,6 @@ impl PhotoWidget {
                 }
             });
             
-            // 将索引向后移动一位，为下一次加载做准备
             self.current_image_index += 1;
         }
     }
@@ -201,7 +204,6 @@ impl PhotoWidget {
 
 impl eframe::App for PhotoWidget {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-        // *** NEW: Periodically check if the window is off-screen and move it back ***
         if self.last_screen_check.elapsed() > Duration::from_secs(1) {
             if let (Some(window_pos), Some(screen_size)) = (
                 frame.info().window_info.position,
@@ -211,34 +213,15 @@ impl eframe::App for PhotoWidget {
                 let mut new_pos = window_pos;
                 let mut changed = false;
 
-                // Check left edge
-                if window_pos.x < 0.0 {
-                    new_pos.x = 0.0;
-                    changed = true;
-                }
-                // Check top edge
-                if window_pos.y < 0.0 {
-                    new_pos.y = 0.0;
-                    changed = true;
-                }
-                // Check right edge
-                if window_pos.x + window_size.x > screen_size.x {
-                    new_pos.x = screen_size.x - window_size.x;
-                    changed = true;
-                }
-                // Check bottom edge
-                if window_pos.y + window_size.y > screen_size.y {
-                    new_pos.y = screen_size.y - window_size.y;
-                    changed = true;
-                }
+                if window_pos.x < 0.0 { new_pos.x = 0.0; changed = true; }
+                if window_pos.y < 0.0 { new_pos.y = 0.0; changed = true; }
+                if window_pos.x + window_size.x > screen_size.x { new_pos.x = screen_size.x - window_size.x; changed = true; }
+                if window_pos.y + window_size.y > screen_size.y { new_pos.y = screen_size.y - window_size.y; changed = true; }
                 
-                if changed {
-                    frame.set_window_pos(new_pos);
-                }
+                if changed { frame.set_window_pos(new_pos); }
             }
             self.last_screen_check = Instant::now();
         }
-
 
         if let Ok(msg) = self.tray_rx.try_recv() {
             match msg {
@@ -260,28 +243,20 @@ impl eframe::App for PhotoWidget {
         }
         let new_size = if self.show_settings { Vec2::new(500.0, 600.0) } else {
             if let Some(texture) = &self.current_image {
-                let texture_size = texture.size_vec2(); // 获取图片的实际尺寸
+                let texture_size = texture.size_vec2();
                 let image_aspect = texture_size.x / texture_size.y;
 
-                // 根据图片自身的横纵方向，选择对应的预设基准尺寸
                 let (target_width_preset, target_height_preset) = 
-                    if texture_size.x >= texture_size.y { // 图片是横向或方形
+                    if texture_size.x >= texture_size.y {
                         (self.config.landscape_width, self.config.landscape_height)
-                    } else { // 图片是纵向
-                        (self.config.portrait_width, self.config.portrait_height) // 修正：这里应使用 portrait_height
+                    } else {
+                        (self.config.portrait_width, self.config.portrait_height)
                     };
                 
-                // 计算预设基准尺寸的宽高比
-                // 注意：这里需要特别考虑 target_height_preset 为 0 的情况，避免除以零
-                let target_aspect = if target_height_preset > 0.0 {
-                    target_width_preset / target_height_preset
-                } else {
-                    image_aspect // 如果预设高度为0，则直接用图片宽高比
-                };
+                let target_aspect = if target_height_preset > 0.0 { target_width_preset / target_height_preset } else { image_aspect };
 
                 match self.config.fit_mode {
                     FitMode::Cover => { 
-                        // Cover 模式的逻辑保持不变，窗口大小固定为预设尺寸
                         if texture_size.x >= texture_size.y {
                             Vec2::new(self.config.landscape_width, self.config.landscape_height)
                         } else {
@@ -289,24 +264,15 @@ impl eframe::App for PhotoWidget {
                         }
                     }
                     FitMode::Contain => {
-                        // 根据你的新期望修改 Contain 模式逻辑
-                        let new_width;
-                        let new_height;
-
-                        if image_aspect > target_aspect {
-                            // 图片相对目标窗口“更宽”，以目标窗口高度为基准
-                            new_height = target_height_preset;
-                            new_width = new_height * image_aspect;
+                        let (new_width, new_height) = if image_aspect > target_aspect {
+                            (target_height_preset * image_aspect, target_height_preset)
                         } else {
-                            // 图片相对目标窗口“更高”或宽高比相同，以目标窗口宽度为基准
-                            new_width = target_width_preset;
-                            new_height = new_width / image_aspect;
-                        }
-
+                            (target_width_preset, target_width_preset / image_aspect)
+                        };
                         Vec2::new(new_width, new_height)
                     }
                 }
-            } else { Vec2::new(self.config.landscape_width, self.config.landscape_height) } // 没有图片时的默认尺寸
+            } else { Vec2::new(self.config.landscape_width, self.config.landscape_height) }
         };
 
         if let Some(old_size) = self.last_window_size {
@@ -315,10 +281,10 @@ impl eframe::App for PhotoWidget {
                     let delta = new_size - old_size;
                     let new_window_pos = match self.config.resize_anchor {
                         ResizeAnchor::Center => current_pos - delta / 2.0,
-                        ResizeAnchor::TopLeft => current_pos, // 左上角不变
-                        ResizeAnchor::TopRight => current_pos - egui::vec2(delta.x, 0.0), // 保持顶部不变，右侧移动
-                        ResizeAnchor::BottomLeft => current_pos - egui::vec2(0.0, delta.y), // 保持左侧不变，底部移动
-                        ResizeAnchor::BottomRight => current_pos - delta, // 保持右下角不变
+                        ResizeAnchor::TopLeft => current_pos,
+                        ResizeAnchor::TopRight => current_pos - egui::vec2(delta.x, 0.0),
+                        ResizeAnchor::BottomLeft => current_pos - egui::vec2(0.0, delta.y),
+                        ResizeAnchor::BottomRight => current_pos - delta,
                     };
                     frame.set_window_pos(new_window_pos);
                 }
@@ -328,7 +294,6 @@ impl eframe::App for PhotoWidget {
         self.last_window_size = Some(new_size);
         frame.set_always_on_top(self.config.always_on_top);
 
-        // --- Draw UI ---
         if self.show_settings {
             self.show_drag_bar = false;
             egui::CentralPanel::default().show(ctx, |ui| {
@@ -338,14 +303,8 @@ impl eframe::App for PhotoWidget {
                 let mut folder_to_remove = None;
                 for (i, folder) in self.config.folders.iter().enumerate() {
                     ui.horizontal(|ui| {
-                        // --- 修改开始 ---
-                        // 1. 先创建按钮
-                        if ui.button("Remove").clicked() {
-                            folder_to_remove = Some(i);
-                        }
-                        // 2. 再创建标签，它会自动填充剩余空间
+                        if ui.button("Remove").clicked() { folder_to_remove = Some(i); }
                         ui.label(folder.to_string_lossy());
-                        // --- 修改结束 ---
                     });
                 }
                 if let Some(i) = folder_to_remove { self.config.folders.remove(i); self.scan_image_files(); }
@@ -371,26 +330,24 @@ impl eframe::App for PhotoWidget {
                 ui.horizontal(|ui| { ui.radio_value(&mut self.config.fit_mode, FitMode::Cover, "Cover (Fill and Crop)"); ui.radio_value(&mut self.config.fit_mode, FitMode::Contain, "Contain (Fit and Resize Window)"); });
                 ui.separator();
                 ui.label("Resize Anchor Point:");
-                ui.horizontal(|ui| {
-                    ui.radio_value(&mut self.config.resize_anchor, ResizeAnchor::Center, "Keep Center");
-                    ui.radio_value(&mut self.config.resize_anchor, ResizeAnchor::TopLeft, "Keep Top-Left");
-                });
-                ui.horizontal(|ui| {
-                    ui.radio_value(&mut self.config.resize_anchor, ResizeAnchor::TopRight, "Keep Top-Right");
-                    ui.radio_value(&mut self.config.resize_anchor, ResizeAnchor::BottomLeft, "Keep Bottom-Left");
-                });
-                ui.horizontal(|ui| {
-                    ui.radio_value(&mut self.config.resize_anchor, ResizeAnchor::BottomRight, "Keep Bottom-Right");
-                });
-
+                ui.horizontal(|ui| { ui.radio_value(&mut self.config.resize_anchor, ResizeAnchor::Center, "Keep Center"); ui.radio_value(&mut self.config.resize_anchor, ResizeAnchor::TopLeft, "Keep Top-Left"); });
+                ui.horizontal(|ui| { ui.radio_value(&mut self.config.resize_anchor, ResizeAnchor::TopRight, "Keep Top-Right"); ui.radio_value(&mut self.config.resize_anchor, ResizeAnchor::BottomLeft, "Keep Bottom-Left"); });
+                ui.horizontal(|ui| { ui.radio_value(&mut self.config.resize_anchor, ResizeAnchor::BottomRight, "Keep Bottom-Right"); });
                 ui.separator();
+
                 if ui.button("Save and Close").clicked() {
                     let multiplier = match self.config.refresh_unit { TimeUnit::Seconds => 1, TimeUnit::Minutes => 60, TimeUnit::Hours => 3600, };
                     self.config.refresh_interval = self.config.refresh_value * multiplier;
+
+                    // --- 新增：在保存设置时，同时保存当前窗口的位置 ---
+                    if let Some(pos) = frame.info().window_info.position {
+                        self.config.window_pos = Some((pos.x, pos.y));
+                    }
+
                     save_config(&self.config);
                     self.show_settings = false;
                     frame.set_decorations(false);
-                    self.scan_image_files(); // Rescan in case filter changed
+                    self.scan_image_files();
                     self.load_random_image();
                     self.last_update = Instant::now();
                 }
@@ -410,34 +367,32 @@ impl eframe::App for PhotoWidget {
                     
                     let mut drag_handle_response: Option<egui::Response> = None;
                     if self.show_drag_bar {
-                        egui::Area::new("drag_bar_area")
-                            .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 5.0))
-                            .show(ctx, |ui| {
-                                let bar_frame = Frame::none().rounding(5.0).inner_margin(egui::style::Margin::symmetric(10.0, 5.0)).fill(Color32::from_rgba_unmultiplied(30, 30, 30, 200));
-                                bar_frame.show(ui, |ui| {
-                                    ui.label(egui::RichText::new("Drag to move").color(Color32::WHITE));
-                                    let response = ui.interact(ui.max_rect(), ui.id().with("drag_handle"), Sense::drag());
-                                    if response.dragged() { frame.drag_window(); }
-                                    drag_handle_response = Some(response);
-                                });
+                        egui::Area::new("drag_bar_area").anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 5.0)).show(ctx, |ui| {
+                            let bar_frame = Frame::none().rounding(5.0).inner_margin(egui::style::Margin::symmetric(10.0, 5.0)).fill(Color32::from_rgba_unmultiplied(30, 30, 30, 200));
+                            bar_frame.show(ui, |ui| {
+                                ui.label(egui::RichText::new("Drag to move").color(Color32::WHITE));
+                                let response = ui.interact(ui.max_rect(), ui.id().with("drag_handle"), Sense::drag());
+                                if response.dragged() { frame.drag_window(); }
+
+                                // --- 新增：当拖动结束后，立即保存窗口位置 ---
+                                if response.drag_released() {
+                                    if let Some(pos) = frame.info().window_info.position {
+                                        self.config.window_pos = Some((pos.x, pos.y));
+                                        save_config(&self.config);
+                                    }
+                                }
+                                
+                                drag_handle_response = Some(response);
                             });
+                        });
                     }
                     
                     let is_pointer_over_ui = image_response.hovered() || drag_handle_response.as_ref().map_or(false, |r| r.hovered());
                     
-                    if is_pointer_over_ui {
-                        self.show_drag_bar = true;
-                        self.hover_leave_time = None;
-                    } else {
-                        if self.hover_leave_time.is_none() {
-                            self.hover_leave_time = Some(Instant::now());
-                        }
-
-                        if let Some(leave_time) = self.hover_leave_time {
-                            if leave_time.elapsed() > Duration::from_millis(100) {
-                                self.show_drag_bar = false;
-                            }
-                        }
+                    if is_pointer_over_ui { self.show_drag_bar = true; self.hover_leave_time = None; } 
+                    else {
+                        if self.hover_leave_time.is_none() { self.hover_leave_time = Some(Instant::now()); }
+                        if let Some(leave_time) = self.hover_leave_time { if leave_time.elapsed() > Duration::from_millis(100) { self.show_drag_bar = false; } }
                     }
                     
                     if image_response.hovered() {
@@ -447,11 +402,7 @@ impl eframe::App for PhotoWidget {
                         });
                     }
 
-                    if image_response.secondary_clicked() {
-                        self.show_settings = true;
-                        frame.set_decorations(true);
-                    }
-
+                    if image_response.secondary_clicked() { self.show_settings = true; frame.set_decorations(true); }
                 } else {
                     ui.label("No images found. Please add a folder in the settings.");
                     if ui.button("Open Settings").clicked() { self.show_settings = true; frame.set_decorations(true); }
@@ -467,9 +418,7 @@ fn load_config() -> Result<AppConfig, Box<dyn std::error::Error>> { let json_str
 
 fn load_icon() -> eframe::IconData {
     let (icon_rgba, icon_width, icon_height) = {
-        let image = image::load_from_memory(include_bytes!("../icon.ico"))
-            .expect("Failed to open icon path")
-            .into_rgba8();
+        let image = image::load_from_memory(include_bytes!("../icon.ico")).expect("Failed to open icon path").into_rgba8();
         let (width, height) = image.dimensions();
         let rgba = image.into_raw();
         (rgba, width, height)
@@ -493,131 +442,58 @@ fn main() -> Result<(), eframe::Error> {
 
     let icon = load_icon();
 
-    let tray_icon_data = tray_icon::Icon::from_rgba(
-        icon.rgba.clone(),
-        icon.width,
-        icon.height,
-    ).expect("Failed to create tray icon");
+    let tray_icon_data = tray_icon::Icon::from_rgba(icon.rgba.clone(), icon.width, icon.height).expect("Failed to create tray icon");
 
-    let _tray_icon = TrayIconBuilder::new()
-        .with_tooltip("Photo Widget")
-        .with_icon(tray_icon_data)
-        .with_menu(Box::new(menu))
-        .build()
-        .unwrap();
+    let _tray_icon = TrayIconBuilder::new().with_tooltip("Photo Widget").with_icon(tray_icon_data).with_menu(Box::new(menu)).build().unwrap();
 
     thread::spawn(move || {
         loop {
             if let Ok(event) = MenuEvent::receiver().try_recv() {
-                if event.id == settings_id {
-                    let _ = tx.send(TrayMessage::ShowSettings);
-                } else if event.id == quit_id {
-                    let _ = tx.send(TrayMessage::Quit);
-                    break;
-                }
+                if event.id == settings_id { let _ = tx.send(TrayMessage::ShowSettings); } 
+                else if event.id == quit_id { let _ = tx.send(TrayMessage::Quit); break; }
             }
             thread::sleep(Duration::from_millis(100));
         }
     });
 
-    // --- 修改开始 ---
-    // 关键改动：配置 eframe::NativeOptions 以隐藏任务栏图标
+    // --- 修改：在启动时加载配置，以获取初始位置 ---
+    let config = load_config().unwrap_or_default();
+    let initial_pos = config.window_pos.map(|(x, y)| egui::pos2(x, y));
+
     let native_options = eframe::NativeOptions {
         initial_window_size: Some(Vec2::new(400.0, 300.0)),
         decorated: false,
         transparent: true,
         icon_data: Some(icon),
-
-        // 1. 使用 `window_builder` 字段来自定义底层的 winit::WindowBuilder
+        // --- 新增：设置窗口的初始位置 ---
+        initial_window_pos: initial_pos,
         window_builder: Some(Box::new(|wb| {
-            // 2. 导入 Windows 平台的扩展 trait
             use winit::platform::windows::WindowBuilderExtWindows;
-            // 3. 调用 with_skip_taskbar(true) 方法，告诉 Windows 不要为此窗口在任务栏上创建按钮
             wb.with_skip_taskbar(true)
         })),
-
         ..Default::default()
     };
     
     eframe::run_native("Photo Widget", native_options, Box::new(move |cc| {
-        // let mut fonts = FontDefinitions::default();
-        // fonts.font_data.insert("my_font".to_owned(), FontData::from_static(include_bytes!("../fonts/msyh.ttc")));
-        // fonts.families.entry(FontFamily::Proportional).or_default().insert(0, "my_font".to_owned());
-        // fonts.families.entry(FontFamily::Monospace).or_default().insert(0, "my_font".to_owned());
-        // cc.egui_ctx.set_fonts(fonts);
         let mut fonts = FontDefinitions::default();
-
-        // 1. 将所有 .ttf 字体数据加载到 font_data 映射中
-        fonts.font_data.insert(
-            "noto_sans".to_owned(),
-            FontData::from_static(include_bytes!("../fonts/NotoSans-Regular.ttf")).tweak(
-                egui::FontTweak {
-                    scale: 1.0, // 可以微调字体大小，使其视觉上更一致
-                    ..Default::default()
-                }
-            ),
-        );
-        fonts.font_data.insert(
-            "noto_sans_sc".to_owned(),
-            // 确认文件名是 NotoSansSC-Regular.ttf
-            FontData::from_static(include_bytes!("../fonts/NotoSansSC-Regular.ttf")).tweak(
-                 egui::FontTweak {
-                    scale: 1.0,
-                    ..Default::default()
-                }
-            ),
-        );
-        fonts.font_data.insert(
-            "noto_sans_jp".to_owned(),
-            // 确认文件名是 NotoSansJP-Regular.ttf
-            FontData::from_static(include_bytes!("../fonts/NotoSansJP-Regular.ttf")).tweak(
-                 egui::FontTweak {
-                    scale: 1.0,
-                    ..Default::default()
-                }
-            ),
-        );
-        fonts.font_data.insert(
-            "noto_sans_kr".to_owned(),
-            // 确认文件名是 NotoSansKR-Regular.ttf
-            FontData::from_static(include_bytes!("../fonts/NotoSansKR-Regular.ttf")).tweak(
-                 egui::FontTweak {
-                    scale: 1.0,
-                    ..Default::default()
-                }
-            ),
-        );
-
-        // 2. 定义字体回退顺序
-        // 将 Noto Sans (拉丁文) 作为首选，然后依次是简体中文、日文、韩文
-        fonts.families
-            .entry(FontFamily::Proportional)
-            .or_default()
-            .extend(vec![
-                "noto_sans".to_owned(),
-                "noto_sans_sc".to_owned(),
-                "noto_sans_jp".to_owned(),
-                "noto_sans_kr".to_owned(),
-            ]);
+        fonts.font_data.insert("noto_sans".to_owned(), FontData::from_static(include_bytes!("../fonts/NotoSans-Regular.ttf")).tweak(egui::FontTweak { scale: 1.0, ..Default::default() }));
+        fonts.font_data.insert("noto_sans_sc".to_owned(), FontData::from_static(include_bytes!("../fonts/NotoSansSC-Regular.ttf")).tweak(egui::FontTweak { scale: 1.0, ..Default::default() }));
+        fonts.font_data.insert("noto_sans_jp".to_owned(), FontData::from_static(include_bytes!("../fonts/NotoSansJP-Regular.ttf")).tweak(egui::FontTweak { scale: 1.0, ..Default::default() }));
+        fonts.font_data.insert("noto_sans_kr".to_owned(), FontData::from_static(include_bytes!("../fonts/NotoSansKR-Regular.ttf")).tweak(egui::FontTweak { scale: 1.0, ..Default::default() }));
         
-        // 为等宽字体也设置回退 (如果需要的话)
-        fonts.families
-            .entry(FontFamily::Monospace)
-            .or_default()
-            .extend(vec![
-                "noto_sans".to_owned(), // 理想情况下这里应该用 Noto Sans Mono
-                "noto_sans_sc".to_owned(),
-                "noto_sans_jp".to_owned(),
-                "noto_sans_kr".to_owned(),
-            ]);
+        fonts.families.entry(FontFamily::Proportional).or_default().extend(vec!["noto_sans".to_owned(), "noto_sans_sc".to_owned(), "noto_sans_jp".to_owned(), "noto_sans_kr".to_owned()]);
+        fonts.families.entry(FontFamily::Monospace).or_default().extend(vec!["noto_sans".to_owned(), "noto_sans_sc".to_owned(), "noto_sans_jp".to_owned(), "noto_sans_kr".to_owned()]);
 
         cc.egui_ctx.set_fonts(fonts);
         let mut visuals = Visuals::dark();
         visuals.window_fill = Color32::TRANSPARENT;
         visuals.window_stroke.color = Color32::TRANSPARENT;
         cc.egui_ctx.set_visuals(visuals);
-        Box::new(PhotoWidget::new(cc, rx))
+
+        // --- 修改：将加载好的 config 传递给 PhotoWidget ---
+        Box::new(PhotoWidget::new(cc, rx, config))
     }))
 }
+
 #[derive(Clone, Copy, Debug)]
 enum TrayMessage { ShowSettings, Quit, }

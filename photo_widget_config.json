@@ -12,5 +12,9 @@
   "portrait_height": 400.0,
   "fit_mode": "Contain",
   "resize_anchor": "TopRight",
-  "orientation_filter": "Landscape"
+  "orientation_filter": "Landscape",
+  "window_pos": [
+    -123.5,
+    84.5
+  ]
 }
