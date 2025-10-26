@@ -242,7 +242,7 @@ impl eframe::App for PhotoWidget {
 
         if let Ok(msg) = self.tray_rx.try_recv() {
             match msg {
-                TrayMessage::ShowSettings => { self.show_settings = true; frame.set_decorations(true); }
+                TrayMessage::ShowSettings => { self.show_settings = true; frame.set_decorations(true);frame.focus();  }
                 TrayMessage::Quit => { frame.close(); }
             }
         }
