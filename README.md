@@ -1,63 +1,64 @@
 # Photo Widget
 
-![Photo Widget Screenshot](icon.png) 
+![Photo Widget Screenshot](icon.png)
+`
+*Read this in [简体中文](README-zh.md)* 
 
-这是一个轻量级的桌面小部件，用于在您的桌面上显示随机图片。它旨在提供一个美观且不干扰工作或娱乐的图片展示方式，支持自定义图片文件夹、刷新间隔和窗口尺寸。
+This is a lightweight desktop widget designed to display random images on your desktop. It aims to provide an aesthetic and unobtrusive way to showcase your photos, supporting custom image folders, refresh intervals, and window sizing.
 
-## ✨ 功能特性
+## ✨ Features
 
-*   **自定义图片文件夹**: 添加您喜爱的图片收藏所在的多个文件夹。
-*   **随机图片展示**: 自动从指定文件夹中随机选择并显示图片。
-*   **可配置刷新间隔**: 设置图片自动切换的时间间隔（秒、分钟、小时），也可以禁用自动刷新。
-*   **智能图片加载**:
-    *   根据图片的原始尺寸和您的配置，优化图片显示，支持 `Cover`（填充并裁剪）和 `Contain`（适应窗口并调整窗口大小）两种模式。
-    *   可根据横向或纵向过滤图片。
-*   **灵活的窗口控制**:
-    *   **无边框透明窗口**: 融入桌面，不占用任务栏空间。
-    *   **"总是置顶"选项**: 确保图片小部件始终可见。
-    *   **多锚点调整**: 在窗口尺寸变化时，可以选择保持窗口的中心、左上角、右上角、左下角或右下角位置不变。
-    *   **自动屏幕边界检查**: 防止窗口在屏幕外丢失，会自动将其拉回屏幕内。
-    *   **拖动条**: 鼠标悬停时显示可拖动窗口的控制条。
-    *   **点击切换**: 点击图片即可切换到下一张。
-    *   **右键菜单**: 右键点击图片或通过系统托盘图标快速访问设置。
-*   **托盘图标集成**: 提供系统托盘图标，方便访问设置和退出应用。
-*   **持久化配置**: 自动保存您的设置到本地文件。
+*   **Custom Image Folders**: Add multiple folders containing your favorite image collections.
+*   **Random Image Display**: Automatically selects and displays images randomly from the specified folders.
+*   **Configurable Refresh Interval**: Set the time interval (seconds, minutes, hours) for automatic image switching, or disable automatic refresh.
+*   **Smart Image Loading**:
+    *   Optimizes image display based on original dimensions and your configuration, supporting `Cover` (fill and crop) and `Contain` (fit within window and resize window) modes.
+    *   Can filter images by landscape or portrait orientation.
+*   **Flexible Window Control**:
+    *   **Borderless Transparent Window**: Blends into the desktop and does not occupy space on the taskbar.
+    *   **"Always on Top" Option**: Ensures the photo widget is always visible.
+    *   **Multi-Anchor Resizing**: When the window size changes, you can choose to keep the window's center, top-left, top-right, bottom-left, or bottom-right position fixed.
+    *   **Automatic Screen Boundary Check**: Prevents the window from getting lost off-screen and automatically moves it back into view.
+    *   **Drag Bar**: A control bar appears on hover, allowing you to drag the window.
+    *   **Click to Switch**: Left-click the image to switch to the next one.
+    *   **Context Menu**: Right-click the image or use the system tray icon to quickly access settings.
+*   **Tray Icon Integration**: Provides a system tray icon for easy access to settings and application exit.
+*   **Persistent Configuration**: Automatically saves your settings to a local file.
 
-## 🚀 如何运行
+## 🚀 How to Run
 
-1.  **下载可执行文件**: 访问 [Releases](https://github.com/your-username/your-repo/releases) 下载最新版的 `photo_widget.exe` (或您操作系统的对应可执行文件)。
-2.  **运行**: 双击下载的可执行文件即可启动。它将作为一个无边框的窗口出现在您的桌面上，并在系统托盘中显示一个图标。
-3.  **初次设置**: 首次运行时，可能需要右键点击图片或系统托盘图标，选择“Settings”来添加您的图片文件夹。
+1.  **Download Executable**: Visit [Releases](https://github.com/Kevin589981/desktop-widget/releases) to download the latest `photo_widget.exe` (or the corresponding executable for your operating system).
+2.  **Run**: Double-click the downloaded executable to start the application. It will appear as a borderless window on your desktop and display an icon in the system tray.
+3.  **Initial Setup**: When running for the first time, you may need to right-click the image or the system tray icon and select "Settings" to add your image folders.
 
-## 🛠️ 如何构建
+## 🛠️ How to Build
 
-本项目使用 Rust 语言和 `eframe` GUI 框架。
+This project is developed using the Rust programming language and the `eframe` GUI framework.
 
-**前提条件**:
+**Prerequisites**:
 
-*   安装 [Rust](https://www.rust-lang.org/tools/install)。
+*   Install [Rust](https://www.rust-lang.org/tools/install).
 
-**构建步骤**:
+**Building Steps**:
 
-1.  **克隆仓库**:
+1.  **Clone the Repository**:
     ```bash
-    git clone https://github.com/your-username/your-repo.git
-    cd your-repo
+    git clone https://github.com/Kevin589981/desktop-widget.git
+    cd desktop-widget
     ```
-    (请将 `your-username/your-repo` 替换为您的实际 GitHub 用户名和仓库名)
 
-2.  **构建**:
+2.  **Build**:
     ```bash
     cargo build --release
     ```
-    这将在 `target/release/` 目录下生成可执行文件。
+    This will generate the executable file in the `target/release/` directory.
 
-## ⚙️ 配置文件
+## ⚙️ Configuration File
 
-项目配置保存在一个名为 `photo_widget_config.json` 的文件中，位于应用程序运行的同一目录下。
-您可以手动编辑此文件，但通常建议通过应用程序的设置界面进行修改。
+Project settings are saved in a file named `photo_widget_config.json`, located in the same directory as the application executable.
+You can manually edit this file, but it's generally recommended to modify settings through the application's user interface.
 
-**示例配置 (photo_widget_config.json):**
+**Example Configuration (photo_widget_config.json):**
 
 ```json
 {
@@ -79,18 +80,16 @@
 }
 ```
 
-## 📄 许可证
+## 📄 License
 
-本项目根据 **Apache License, Version 2.0** 许可证发布。您可以在 [LICENSE](LICENSE) 文件中查看完整的许可证文本。
+This project is licensed under the **Apache License, Version 2.0**. You can find the full license text in the [LICENSE](LICENSE) file.
 
-**Apache 许可证概要:**
+**Apache License Summary:**
 
-允许您自由使用、修改和分发本软件，无论是商业用途还是非商业用途。但您必须：
+You are free to use, modify, and distribute this software for both commercial and non-commercial purposes. However, you must:
 
-*   保留所有版权、专利、商标和归属通知。
-*   在任何修改过的文件中声明您所做的修改。
-*   在分发软件时包含许可证副本和 NOTICE 文件（如果存在）。
+*   Retain all copyright, patent, trademark, and attribution notices.
+*   State any changes you made in any modified files.
+*   Include a copy of the license and a NOTICE file (if one exists) when distributing the software.
 
 ---
-
-希望这个 README 文件符合您的要求！别忘了替换占位符（如 `your-username/your-repo` 和截图路径）。
