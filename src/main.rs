@@ -260,21 +260,53 @@ impl eframe::App for PhotoWidget {
         }
         let new_size = if self.show_settings { Vec2::new(500.0, 600.0) } else {
             if let Some(texture) = &self.current_image {
-                let is_landscape = texture.size()[0] > texture.size()[1];
-                let aspect_ratio = texture.size()[0] as f32 / texture.size()[1] as f32;
+                let texture_size = texture.size_vec2(); // 获取图片的实际尺寸
+                let image_aspect = texture_size.x / texture_size.y;
+
+                // 根据图片自身的横纵方向，选择对应的预设基准尺寸
+                let (target_width_preset, target_height_preset) = 
+                    if texture_size.x >= texture_size.y { // 图片是横向或方形
+                        (self.config.landscape_width, self.config.landscape_height)
+                    } else { // 图片是纵向
+                        (self.config.portrait_width, self.config.portrait_height) // 修正：这里应使用 portrait_height
+                    };
+                
+                // 计算预设基准尺寸的宽高比
+                // 注意：这里需要特别考虑 target_height_preset 为 0 的情况，避免除以零
+                let target_aspect = if target_height_preset > 0.0 {
+                    target_width_preset / target_height_preset
+                } else {
+                    image_aspect // 如果预设高度为0，则直接用图片宽高比
+                };
+
                 match self.config.fit_mode {
-                    FitMode::Cover => { if is_landscape { Vec2::new(self.config.landscape_width, self.config.landscape_height) } else { Vec2::new(self.config.portrait_width, self.config.portrait_height) } }
-                    FitMode::Contain => {
-                        if is_landscape {
-                            let width = self.config.landscape_width;
-                            Vec2::new(width, width / aspect_ratio)
+                    FitMode::Cover => { 
+                        // Cover 模式的逻辑保持不变，窗口大小固定为预设尺寸
+                        if texture_size.x >= texture_size.y {
+                            Vec2::new(self.config.landscape_width, self.config.landscape_height)
                         } else {
-                            let height = self.config.portrait_height;
-                            Vec2::new(height * aspect_ratio, height)
+                            Vec2::new(self.config.portrait_width, self.config.portrait_height)
                         }
                     }
+                    FitMode::Contain => {
+                        // 根据你的新期望修改 Contain 模式逻辑
+                        let new_width;
+                        let new_height;
+
+                        if image_aspect > target_aspect {
+                            // 图片相对目标窗口“更宽”，以目标窗口高度为基准
+                            new_height = target_height_preset;
+                            new_width = new_height * image_aspect;
+                        } else {
+                            // 图片相对目标窗口“更高”或宽高比相同，以目标窗口宽度为基准
+                            new_width = target_width_preset;
+                            new_height = new_width / image_aspect;
+                        }
+
+                        Vec2::new(new_width, new_height)
+                    }
                 }
-            } else { Vec2::new(self.config.landscape_width, self.config.landscape_height) }
+            } else { Vec2::new(self.config.landscape_width, self.config.landscape_height) } // 没有图片时的默认尺寸
         };
 
         if let Some(old_size) = self.last_window_size {
