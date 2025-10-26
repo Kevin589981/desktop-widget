@@ -438,6 +438,7 @@ fn load_icon() -> eframe::IconData {
 }
 
 fn main() -> Result<(), eframe::Error> {
+    // 1. 设置系统托盘图标和菜单事件通信
     let (tx, rx) = mpsc::channel();
     let settings_item = MenuItem::new("Settings", true, None);
     let quit_item = MenuItem::new("Quit", true, None);
@@ -447,31 +448,33 @@ fn main() -> Result<(), eframe::Error> {
     menu.append_items(&[&settings_item, &quit_item]).unwrap();
 
     let icon = load_icon();
+    let tray_icon_data =
+        tray_icon::Icon::from_rgba(icon.rgba.clone(), icon.width, icon.height)
+            .expect("Failed to create tray icon");
 
-    let tray_icon_data = tray_icon::Icon::from_rgba(icon.rgba.clone(), icon.width, icon.height).expect("Failed to create tray icon");
+    let _tray_icon = TrayIconBuilder::new()
+        .with_tooltip("Photo Widget")
+        .with_icon(tray_icon_data)
+        .with_menu(Box::new(menu))
+        .build()
+        .unwrap();
 
-    let _tray_icon = TrayIconBuilder::new().with_tooltip("Photo Widget").with_icon(tray_icon_data).with_menu(Box::new(menu)).build().unwrap();
-
-    // --- 修改事件监听线程 ---
+    // 2. 启动一个新线程来监听托盘图标的事件
     thread::spawn(move || {
         loop {
-            // 检查菜单事件
+            // 检查菜单点击事件
             if let Ok(event) = MenuEvent::receiver().try_recv() {
-                if event.id == settings_id { 
-                    let _ = tx.send(TrayMessage::ShowSettings); 
-                } 
-                else if event.id == quit_id { 
-                    let _ = tx.send(TrayMessage::Quit); 
-                    break; 
+                if event.id == settings_id {
+                    let _ = tx.send(TrayMessage::ShowSettings);
+                } else if event.id == quit_id {
+                    let _ = tx.send(TrayMessage::Quit);
+                    break;
                 }
             }
 
-            // --- 新增: 检查图标点击事件 ---
+            // 检查托盘图标本身的点击事件
             if let Ok(event) = TrayIconEvent::receiver().try_recv() {
-                // 如果是左键单击
                 if event.click_type == ClickType::Left {
-                    // 发送消息以显示设置 (您可以按需更改此处的逻辑)
-                    // 例如，您可以定义一个新的 TrayMessage 来处理此事件
                     let _ = tx.send(TrayMessage::FocusWindow);
                 }
             }
@@ -479,18 +482,17 @@ fn main() -> Result<(), eframe::Error> {
             thread::sleep(Duration::from_millis(100));
         }
     });
-    // --- 线程修改结束 ---
 
-    // --- 修改：在启动时加载配置，以获取初始位置 ---
+    // 3. 加载应用配置，以确定窗口的初始位置
     let config = load_config().unwrap_or_default();
     let initial_pos = config.window_pos.map(|(x, y)| egui::pos2(x, y));
 
+    // 4. 设置 eframe 的原生窗口选项
     let native_options = eframe::NativeOptions {
         initial_window_size: Some(Vec2::new(400.0, 300.0)),
         decorated: false,
         transparent: true,
         icon_data: Some(icon),
-        // --- 新增：设置窗口的初始位置 ---
         initial_window_pos: initial_pos,
         window_builder: Some(Box::new(|wb| {
             use winit::platform::windows::WindowBuilderExtWindows;
@@ -499,77 +501,95 @@ fn main() -> Result<(), eframe::Error> {
         ..Default::default()
     };
     
-    eframe::run_native("Photo Widget", native_options, Box::new(move |cc| {
-        // ... (省略字体和样式的设置) ...
-        let mut fonts = FontDefinitions::default();
+    // 5. 启动 eframe 应用
+    eframe::run_native(
+        "Photo Widget",
+        native_options,
+        Box::new(move |cc| {
+            // --- 从这里开始是动态加载系统字体的核心逻辑 ---
+            let mut fonts = FontDefinitions::default();
 
-        // 初始化系统字体数据库
-        let mut font_database = fontdb::Database::new();
-        font_database.load_system_fonts();
+            // 初始化系统字体数据库
+            let mut font_database = fontdb::Database::new();
+            font_database.load_system_fonts();
 
-        // 定义一个优先字体列表，覆盖中日韩及常用西文字体
-        // Windows: "Microsoft YaHei UI", "Yu Gothic UI", "Malgun Gothic"
-        // macOS: "PingFang SC", "Hiragino Kaku Gothic ProN", "Apple SD Gothic Neo"
-        // Linux: "Noto Sans CJK SC/JP/KR"
-        let font_families = [
-            "Microsoft YaHei UI",    // 简体中文 (Win)
-            "PingFang SC",           // 简体中文 (macOS)
-            "Noto Sans CJK SC",      // 简体中文 (Linux)
-            "Yu Gothic UI",          // 日语 (Win)
-            "Hiragino Kaku Gothic ProN", // 日语 (macOS)
-            "Noto Sans CJK JP",      // 日语 (Linux)
-            "Malgun Gothic",         // 韩语 (Win)
-            "Apple SD Gothic Neo",   // 韩语 (macOS)
-            "Noto Sans CJK KR",      // 韩语 (Linux)
-            "Segoe UI",             // 英文 UI 字体 (Win)
-            "San Francisco",         // 英文 UI 字体 (macOS)
-            "Arial",                 // 通用后备
-        ];
+            // 定义一个优先字体列表，以最好地覆盖中、日、韩和西文字符
+            // 这个列表的顺序很重要，egui会依次尝试用它们来渲染字符
+            let font_families = [
+                // Windows 平台常用字体
+                "Microsoft YaHei UI",    // 简体中文
+                "Yu Gothic UI",          // 日语
+                "Malgun Gothic",         // 韩语
+                "Segoe UI",             // 英文 UI
+                // macOS 平台常用字体
+                "PingFang SC",           // 简体中文
+                "Hiragino Kaku Gothic ProN", // 日语
+                "Apple SD Gothic Neo",   // 韩语
+                "San Francisco",         // 英文 UI
+                // Linux/通用 平台常用字体
+                "Noto Sans CJK SC",      // 简体中文
+                "Noto Sans CJK JP",      // 日语
+                "Noto Sans CJK KR",      // 韩语
+                // 通用后备字体
+                "Arial",
+            ];
 
-        let mut loaded_font_names = Vec::new();
+            let mut loaded_font_names = Vec::new();
 
-        for family_name in &font_families {
-            let query = fontdb::Query {
-                families: &[fontdb::Family::Name(family_name)],
-                ..Default::default()
-            };
+            for family_name in &font_families {
+                let query = fontdb::Query {
+                    families: &[fontdb::Family::Name(family_name)],
+                    ..Default::default()
+                };
 
-            if let Some(font_id) = font_database.query(&query) {
-                if let Some((source, _index)) = font_database.face_source(font_id) {
-                    if let fontdb::Source::File(path) = source {
-                        if let Ok(font_data) = fs::read(path) {
-                            // 使用字体族名称的小写作为 egui 中的 key
-                            let font_name = family_name.to_lowercase();
-                            
-                            // 避免重复加载
-                            if !fonts.font_data.contains_key(&font_name) {
-                                fonts.font_data.insert(
-                                    font_name.clone(),
-                                    FontData::from_owned(font_data),
-                                );
-                                loaded_font_names.push(font_name);
+                // 在数据库中查找字体
+                if let Some(font_id) = font_database.query(&query) {
+                    // 获取字体的源文件路径
+                    if let Some((source, _index)) = font_database.face_source(font_id) {
+                        if let fontdb::Source::File(path) = source {
+                            // 读取字体文件数据
+                            if let Ok(font_data) = fs::read(path) {
+                                let font_name = family_name.to_lowercase().replace(' ', "-");
+                                
+                                // 避免重复加载同一个字体文件
+                                if !fonts.font_data.contains_key(&font_name) {
+                                    fonts.font_data.insert(
+                                        font_name.clone(),
+                                        FontData::from_owned(font_data),
+                                    );
+                                    loaded_font_names.push(font_name);
+                                }
                             }
                         }
                     }
                 }
             }
-        }
+            
+            // 如果成功加载了任何字体，将它们设置为默认的后备字体列表
+            if !loaded_font_names.is_empty() {
+                fonts.families.insert(FontFamily::Proportional, loaded_font_names.clone());
+                fonts.families.insert(FontFamily::Monospace, loaded_font_names);
+            }
+            // --- 字体加载逻辑结束 ---
 
-// 如果成功加载了任何字体，将它们设置为默认字体
-        if !loaded_font_names.is_empty() {
-            fonts.families.insert(FontFamily::Proportional, loaded_font_names.clone());
-            fonts.families.insert(FontFamily::Monospace, loaded_font_names);
-        }
+            // 将配置好的字体应用到 egui 上下文
+            cc.egui_ctx.set_fonts(fonts);
+            
+            // 设置窗口为透明背景
+            let mut visuals = Visuals::dark();
+            visuals.window_fill = Color32::TRANSPARENT;
+            visuals.window_stroke.color = Color32::TRANSPARENT;
+            cc.egui_ctx.set_visuals(visuals);
 
-        let mut visuals = Visuals::dark();
-        visuals.window_fill = Color32::TRANSPARENT;
-        visuals.window_stroke.color = Color32::TRANSPARENT;
-        cc.egui_ctx.set_visuals(visuals);
-
-        // --- 修改：将加载好的 config 传递给 PhotoWidget ---
-        Box::new(PhotoWidget::new(cc, rx, config))
-    }))
+            // 创建并返回应用实例
+            Box::new(PhotoWidget::new(cc, rx, config))
+        }),
+    )
 }
 
 #[derive(Clone, Copy, Debug)]
-enum TrayMessage { ShowSettings, Quit, FocusWindow, }
+enum TrayMessage {
+    ShowSettings,
+    Quit,
+    FocusWindow,
+}
